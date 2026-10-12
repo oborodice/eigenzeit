@@ -1,4 +1,6 @@
 #pragma once
 
-void setupWifi();
-void scanWifi();
+#include "rssi_histogram.h"
+
+void beginWifi();
+bool scanWifi(RssiHistogram& histogram);
