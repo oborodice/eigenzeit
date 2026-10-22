@@ -8,6 +8,7 @@ $ /Applications/SuperCollider.app/Contents/MacOS/sclang main.scd
 - `main.scd` : 起動し、各層を読み込んで、層の合計を抑えてから出力する
 - `sines.scd` : サイン波の層
 - `clicks.scd` : クリックの層
+- `noise.scd` : ノイズの層
 
 ## 受信するOSC
 
@@ -26,3 +27,7 @@ $ /Applications/SuperCollider.app/Contents/MacOS/sclang main.scd
   - 2つ目の値: 不規則さ(等間隔からランダムへ)
   - 3つ目の値: 明るさ(クリック1回の揺れの周波数、55Hz〜20kHzに対数で対応)
   - 4つ目の値: 音量
+- `/noise` : ホワイトノイズから、帯域を選んで鳴らし続ける
+  - 1つ目の値: 帯域の中心(55Hz〜20kHzに対数で対応)
+  - 2つ目の値: 帯域の幅(0.01〜10オクターブに対数で対応、狭いと音の高さを持ち、広いとザーッという音になる)
+  - 3つ目の値: 音量(幅を変えても、音の大きさが揃うように補う)

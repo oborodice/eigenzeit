@@ -3,7 +3,11 @@
 var directory = thisProcess.nowExecutingPath.dirname;
 // 各層のファイルと、そこから作るSynthの数。2つ以上作る層は、OSCのアドレスに1からの番号を付ける(/sines/1、/sines/2)
 // サイン波は、低い所のうなりと鋭く高い音を同時に鳴らせるよう2つにする。どちらも全範囲を使い、組み合わせ方はAIが選ぶ
-var layers = [(fileName: "sines.scd", synthCount: 2), (fileName: "clicks.scd", synthCount: 1)];
+var layers = [
+	(fileName: "sines.scd", synthCount: 2),
+	(fileName: "clicks.scd", synthCount: 1),
+	(fileName: "noise.scd", synthCount: 1),
+];
 // 新しい値へは、この時間をかけて一定の速さで移る
 // 値が一瞬で跳ぶと波の形が途切れ、プツッという音が耳やツイーターの負担になるため、少なくとも数十ミリ秒はかける
 // それより長いのは、一瞬では変われない生き物の体のような性質を、AIの体に持たせるため
