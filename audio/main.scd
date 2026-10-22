@@ -1,7 +1,9 @@
 (
 // 各層のファイルはこのファイルと同じ場所から読み込む。起動を待つ間は実行中のファイルの場所が取れないため、先に控えておく
 var directory = thisProcess.nowExecutingPath.dirname;
-var layerFiles = ["sines.scd", "clicks.scd"];
+// 各層のファイルと、そこから作るSynthの数。2つ以上作る層は、OSCのアドレスに1からの番号を付ける(/sines/1、/sines/2)
+// サイン波は、低い所のうなりと鋭く高い音を同時に鳴らせるよう2つにする。どちらも全範囲を使い、組み合わせ方はAIが選ぶ
+var layers = [(fileName: "sines.scd", synthCount: 2), (fileName: "clicks.scd", synthCount: 1)];
 // 新しい値へは、この時間をかけて一定の速さで移る
 // 値が一瞬で跳ぶと波の形が途切れ、プツッという音が耳やツイーターの負担になるため、少なくとも数十ミリ秒はかける
 // それより長いのは、一瞬では変われない生き物の体のような性質を、AIの体に持たせるため
@@ -24,8 +26,8 @@ var smooth = { |value| VarLag.kr(value.clip(0, 1), transitionSeconds) };
 var highFreqGain = { |freq| freq.explin(highFreqStart, maxFreq, 1, highFreqMinGain) };
 
 // 各層のファイルは、共通の値と処理を受け取ってSynthDefを作る関数を返す(ファイルの最後の値が戻り値になる)
-var layerSynthDefs = layerFiles.collect { |file|
-	var makeSynthDef = thisProcess.interpreter.executeFile(directory +/+ file);
+var layerSynthDefs = layers.collect { |layer|
+	var makeSynthDef = thisProcess.interpreter.executeFile(directory +/+ layer.fileName);
 	makeSynthDef.(smooth, highFreqGain, minFreq, maxFreq);
 };
 
@@ -44,13 +46,20 @@ s.waitForBoot {
 	// 各層より後に計算されるよう、末尾に置く(各層は先頭に置かれる)
 	Synth.tail(s, \output);
 
-	layerSynthDefs.do { |synthDef|
-		var synth = Synth(synthDef.name, [\out, mixBus]);
+	layers.do { |layer, layerIndex|
+		var synthDef = layerSynthDefs[layerIndex];
 		// OSCの値は、SynthDefの引数の並び(書き出し先のoutを除く)の順に割り当て、順番を書く場所を1か所にする
 		var paramNames = synthDef.allControlNames.collect(_.name).reject(_ == \out);
-		OSCdef(synthDef.name.asSymbol, { |msg|
-			synth.set(*paramNames.collect { |name, i| [name, msg[i + 1]] }.flatten);
-		}, ("/" ++ synthDef.name).asSymbol);
+		layer.synthCount.do { |synthIndex|
+			var synth = Synth(synthDef.name, [\out, mixBus]);
+			// 2つ以上作る層だけ、アドレスに1からの番号を付ける
+			var suffix = if(layer.synthCount > 1, { "/" ++ (synthIndex + 1) }, { "" });
+			var address = ("/" ++ synthDef.name ++ suffix).asSymbol;
+			OSCdef(address, { |msg|
+				// msgの0番目はアドレスのため、値は1番目から
+				synth.set(*paramNames.collect { |name, paramIndex| [name, msg[paramIndex + 1]] }.flatten);
+			}, address);
+		};
 	};
 };
 )
