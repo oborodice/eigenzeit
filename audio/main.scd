@@ -23,6 +23,7 @@ var highFreqStart = 8000;
 var highFreqMinGain = 0.25;
 // 層を足し合わせると音量の値の上限を超えるため、音割れしないよう少し余裕を持たせた上限に抑える
 var limiterLevel = 0.9;
+var pythonAddress = NetAddr("127.0.0.1", 9000);
 
 // 0〜1のまま滑らかにしてから実際の値に直し、周波数の高さによって動きの速さが変わって聴こえないようにする
 // lagは指数的に近づき、最初の1秒ほどで大半が動いてしまうため、一定の速さで移るVarLagを使う
@@ -34,12 +35,16 @@ var layerSynthDefs = layers.collect { |layer|
 	var makeSynthDef = thisProcess.interpreter.executeFile(directory +/+ layer.fileName);
 	makeSynthDef.(smooth, highFreqGain, minFreq, maxFreq);
 };
+var micSynthDef = thisProcess.interpreter.executeFile(directory +/+ "mic.scd");
+
+// マイクの最も高い帯域(20kHz)の上の端は約22.4kHzで、扱える周波数の上限(サンプリング周波数の半分)を超えないよう48kHzにする
+s.options.sampleRate = 48000;
 
 s.waitForBoot {
-	// 各層はここに書き出し、最後にまとめて上限を抑えてから出力する
 	var mixBus = Bus.audio(s, 2);
 
 	layerSynthDefs.do(_.add);
+	micSynthDef.add;
 	SynthDef(\output, {
 		Out.ar(0, Limiter.ar(In.ar(mixBus, 2), limiterLevel));
 	}).add;
@@ -56,7 +61,6 @@ s.waitForBoot {
 		var paramNames = synthDef.allControlNames.collect(_.name).reject(_ == \out);
 		layer.synthCount.do { |synthIndex|
 			var synth = Synth(synthDef.name, [\out, mixBus]);
-			// 2つ以上作る層だけ、アドレスに1からの番号を付ける
 			var suffix = if(layer.synthCount > 1, { "/" ++ (synthIndex + 1) }, { "" });
 			var address = ("/" ++ synthDef.name ++ suffix).asSymbol;
 			OSCdef(address, { |msg|
@@ -65,5 +69,11 @@ s.waitForBoot {
 			}, address);
 		};
 	};
+
+	Synth(micSynthDef.name);
+	// msgの1、2番目はSynthの番号と識別用の番号のため、値は3番目から
+	OSCdef(micSynthDef.name, { |msg|
+		pythonAddress.sendMsg(msg[0], *msg[3..]);
+	}, ("/" ++ micSynthDef.name).asSymbol, s.addr);
 };
 )
