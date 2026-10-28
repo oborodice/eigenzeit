@@ -35,7 +35,7 @@ var layerSynthDefs = layers.collect { |layer|
 	var makeSynthDef = thisProcess.interpreter.executeFile(directory +/+ layer.fileName);
 	makeSynthDef.(smooth, highFreqGain, minFreq, maxFreq);
 };
-var micSynthDef = thisProcess.interpreter.executeFile(directory +/+ "mic.scd");
+var mic = thisProcess.interpreter.executeFile(directory +/+ "mic.scd");
 
 // マイクの最も高い帯域(20kHz)の上の端は約22.4kHzで、扱える周波数の上限(サンプリング周波数の半分)を超えないよう48kHzにする
 s.options.sampleRate = 48000;
@@ -44,7 +44,7 @@ s.waitForBoot {
 	var mixBus = Bus.audio(s, 2);
 
 	layerSynthDefs.do(_.add);
-	micSynthDef.add;
+	mic.synthDef.add;
 	SynthDef(\output, {
 		Out.ar(0, Limiter.ar(In.ar(mixBus, 2), limiterLevel));
 	}).add;
@@ -70,10 +70,10 @@ s.waitForBoot {
 		};
 	};
 
-	Synth(micSynthDef.name);
+	Synth(mic.synthDef.name);
 	// msgの1、2番目はSynthの番号と識別用の番号のため、値は3番目から
-	OSCdef(micSynthDef.name, { |msg|
-		pythonAddress.sendMsg(msg[0], *msg[3..]);
-	}, ("/" ++ micSynthDef.name).asSymbol, s.addr);
+	OSCdef(mic.synthDef.name, { |msg|
+		pythonAddress.sendMsg(msg[0], mic.toJson(msg[3..]));
+	}, ("/" ++ mic.synthDef.name).asSymbol, s.addr);
 };
 )

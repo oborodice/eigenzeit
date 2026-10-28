@@ -1,5 +1,5 @@
 // マイクの特徴量: マイクの音から、AIが世界を聴き分けるための値を取り出す
-// main.scdが読み込み、返すSynthDefを登録する。値はSynthDefの名前と同じOSCのアドレス(/mic)でsclangに届く
+// main.scdが読み込み、返すSynthDefを登録する。値はSynthDefの名前と同じOSCのアドレス(/mic)でsclangに届き、返すtoJsonで名前を付けたJSONにしてPythonへ送る
 
 // ECM999を繋いだMOTU M4の入力(0が入力1)
 var inputChannel = 0;
@@ -14,8 +14,12 @@ var minDb = -100;
 var fftSize = 512;
 // 立ち上がりと数える、音の急な変化の大きさ(Onsetsの既定値)
 var onsetThreshold = 0.5;
+// sclangに届く値は32ビットの小数で、文字にすると桁が長くなるため、聴き分けに要らない桁を落とす
+// dBは、聴いて分かる差よりずっと細かい0.01まで。平坦さは0〜1の値を0.0001刻みまで
+var dbStep = 0.01;
+var flatnessStep = 0.0001;
 
-SynthDef(\mic, {
+var synthDef = SynthDef(\mic, {
 	var input = SoundIn.ar(inputChannel);
 	var trigger = Impulse.ar(sendRate);
 	// 送るたびに0から数え直す値から、0に戻る直前の、送る間隔1回分の値を取り出す
@@ -39,3 +43,18 @@ SynthDef(\mic, {
 	var sendTrigger = trigger * (PulseCount.ar(trigger) > 1);
 	SendReply.ar(sendTrigger, '/mic', bandDbs ++ [totalDb, flatness, onsetCount]);
 });
+
+// SendReplyの値には名前がないため、並びを決めたこのファイルで名前を付ける
+var toJson = { |self, values|
+	var bandCount = bandCenters.size;
+	var bandDbs = values[0..(bandCount - 1)].collect(_.round(dbStep));
+	var totalDb = values[bandCount].round(dbStep);
+	var flatness = values[bandCount + 1].round(flatnessStep);
+	// SendReplyは数も小数で送るため、整数に直す
+	var onsetCount = values[bandCount + 2].asInteger;
+	"{\"band_rel_db\": [%], \"total_db\": %, \"flatness\": %, \"onset_count\": %}".format(
+		bandDbs.join(", "), totalDb, flatness, onsetCount
+	);
+};
+
+(synthDef: synthDef, toJson: toJson);
