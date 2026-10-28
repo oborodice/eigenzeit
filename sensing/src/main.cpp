@@ -1,6 +1,23 @@
 #include <M5CoreS3.h>
 
 #include "radio.h"
+#include "units.h"
+
+// メモリには余裕があるため、どちらもArduinoのloopのタスクと同じ大きさにする
+constexpr uint32_t TASK_STACK_BYTES = 8192;
+
+// 電波のスキャンは数秒かかり、その間ほかのことができないため、ユニットを読むのとは別のタスクで繰り返す
+static void radioTask(void*) {
+  while (true) {
+    scanRadio();
+  }
+}
+
+static void unitsTask(void*) {
+  while (true) {
+    readUnits();
+  }
+}
 
 void setup() {
   auto cfg = M5.config();
@@ -11,9 +28,13 @@ void setup() {
   Serial.begin();
 
   beginRadio();
+  beginUnits();
+  // コアを決めずに動かすと、シリアルに送る電波の行が途中で欠けたため、Arduinoのloopのタスクと同じコアに固定する
+  xTaskCreatePinnedToCore(radioTask, "radio", TASK_STACK_BYTES, nullptr, 1, nullptr, ARDUINO_RUNNING_CORE);
+  xTaskCreatePinnedToCore(unitsTask, "units", TASK_STACK_BYTES, nullptr, 1, nullptr, ARDUINO_RUNNING_CORE);
 }
 
 void loop() {
-  // スキャン自体に数秒かかるため、待ち時間は入れない
-  scanRadio();
+  // 繰り返す処理は上の2つのタスクで行うため、Arduinoのloopのタスクは使わない
+  vTaskDelete(nullptr);
 }
