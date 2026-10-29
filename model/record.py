@@ -25,7 +25,7 @@ RETRY_INTERVAL_SECONDS = 1
 OSC_ADDRESS = ("127.0.0.1", 9000)
 
 
-# シリアルとOSCは別々のスレッドで受け取るため、1行を書き終えるまで他のスレッドが書かないようにする
+# シリアル、OSC、鳴らす処理など、複数のスレッドから書くため、1行を書き終えるまで他のスレッドが書かないようにする
 class Recording:
     def __init__(self, file: TextIO) -> None:
         self._file = file
@@ -109,15 +109,23 @@ def record_mic_in_background(recording: Recording) -> None:
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
 
-def main() -> None:
+def open_recording_file() -> TextIO:
     path = RECORDINGS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}.jsonl"
     RECORDINGS_DIR.mkdir(exist_ok=True)
     print(f"Recording to {path}")
+    return path.open("w", encoding="utf-8")
+
+
+# シリアルの受け取りは終わらずに続くため、マイクは先に別のスレッドで受け取り始める
+def record_inputs(recording: Recording) -> None:
+    record_mic_in_background(recording)
+    record_serial_with_reconnect(recording)
+
+
+def main() -> None:
     try:
-        with path.open("w", encoding="utf-8") as file:
-            recording = Recording(file)
-            record_mic_in_background(recording)
-            record_serial_with_reconnect(recording)
+        with open_recording_file() as file:
+            record_inputs(Recording(file))
     # Ctrl+Cは記録を終える通常の操作のため、エラーとして表示しない
     except KeyboardInterrupt:
         pass
