@@ -8,7 +8,7 @@ var minRate = 0.1;
 // 明るさはその揺れの周波数で、低いと「コッ」、高いと「チッ」になる
 var clickCycles = 3;
 
-{ |smooth, ampToGain, highFreqGain, minFreq, maxFreq|
+{ |smooth, ampToGain, freqGain, minFreq, maxFreq|
 	// out以外の値は全て0〜1で受け取る。並びがOSCで送る値の順番になる
 	SynthDef(\clicks, { |out, rate = 0, irregularity = 0, brightness = 0, amp = 0|
 		var clickRate = smooth.(rate).linexp(0, 1, minRate, maxFreq);
@@ -27,6 +27,6 @@ var clickCycles = 3;
 		var randomClicks = click.(Dust.ar(clickRate) > 0);
 		var mixed = (regularClicks * (1 - smoothedIrregularity)) + (randomClicks * smoothedIrregularity);
 		// 揺れの周波数か頻度のどちらかが高ければ、高い音として聴こえる
-		Out.ar(out, mixed * highFreqGain.(max(clickFreq, clickRate)) * volume ! 2);
+		Out.ar(out, mixed * freqGain.(max(clickFreq, clickRate)) * volume ! 2);
 	});
 }

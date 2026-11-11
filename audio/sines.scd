@@ -24,7 +24,7 @@ var maxWobbleOctaves = 1;
 thisThread.randSeed = 1;
 jitterOffsets = { maxJitterSlots.rand2 } ! maxVoices;
 
-{ |smooth, ampToGain, highFreqGain, minFreq, maxFreq|
+{ |smooth, ampToGain, freqGain, minFreq, maxFreq|
 	// out以外の値は全て0〜1で受け取る(freqもHzではない)。並びがOSCで送る値の順番になる
 	SynthDef(\sines, { |out, freq = 0, count = 0, spread = 0, jitter = 0, wobbleRate = 0, wobbleDepth = 0, amp = 0|
 		var baseFreq = smooth.(freq).linexp(0, 1, minFreq, maxFreq);
@@ -44,7 +44,7 @@ jitterOffsets = { maxJitterSlots.rand2 } ! maxVoices;
 			var voiceFreq = (baseFreq * (2 ** ((position * stepOctaves) + wobble))).clip(minFreq, maxFreq);
 			// 本数の端数の分はその音量で鳴らし、本数の増減がフェードになるようにする
 			var voiceAmp = (voiceCount - i).clip(0, 1);
-			SinOsc.ar(voiceFreq) * voiceAmp * highFreqGain.(voiceFreq);
+			SinOsc.ar(voiceFreq) * voiceAmp * freqGain.(voiceFreq);
 		};
 		// 本数で割り、全ての波の山が重なっても音量の値を超えないようにする
 		Out.ar(out, voices.sum / voiceCount * volume ! 2);
