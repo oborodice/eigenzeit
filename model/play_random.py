@@ -11,8 +11,8 @@ AUDIO_ADDRESS = ("127.0.0.1", 57120)
 
 # 層ごとのOSCのアドレスと値の数。並びと意味は audio/README.md の「受信するOSC」を参照
 PARAM_COUNTS = {
-    "/sines/1": 5,
-    "/sines/2": 5,
+    "/sines/1": 7,
+    "/sines/2": 7,
     "/clicks": 4,
     "/noise": 3,
 }
