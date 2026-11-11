@@ -15,14 +15,14 @@ var jitterOffsets;
 thisThread.randSeed = 1;
 jitterOffsets = { maxJitterSlots.rand2 } ! maxVoices;
 
-{ |smooth, highFreqGain, minFreq, maxFreq|
+{ |smooth, ampToGain, highFreqGain, minFreq, maxFreq|
 	// out以外の値は全て0〜1で受け取る(freqもHzではない)。並びがOSCで送る値の順番になる
 	SynthDef(\sines, { |out, freq = 0, count = 0, spread = 0, jitter = 0, amp = 0|
 		var baseFreq = smooth.(freq).linexp(0, 1, minFreq, maxFreq);
 		var voiceCount = smooth.(count).linlin(0, 1, 1, maxVoices);
 		var stepOctaves = smooth.(spread).linexp(0, 1, minStepOctaves, maxStepOctaves);
 		var smoothedJitter = smooth.(jitter);
-		var smoothedAmp = smooth.(amp);
+		var volume = ampToGain.(smooth.(amp));
 		var voices = maxVoices.collect { |i|
 			// 基準の周波数から 0, +1, -1, +2, -2, … 段の位置に並べ、本数を増やすと外側に足されていく
 			var slot = (i + 1).div(2) * if(i.odd, 1, -1);
@@ -33,6 +33,6 @@ jitterOffsets = { maxJitterSlots.rand2 } ! maxVoices;
 			SinOsc.ar(voiceFreq) * voiceAmp * highFreqGain.(voiceFreq);
 		};
 		// 本数で割り、全ての波の山が重なっても音量の値を超えないようにする
-		Out.ar(out, voices.sum / voiceCount * smoothedAmp ! 2);
+		Out.ar(out, voices.sum / voiceCount * volume ! 2);
 	});
 }

@@ -21,6 +21,8 @@ var maxFreq = 20000;
 // 聴きやすくするための調整ではなく、耳を傷めないための制限であり、人間に合わせて出力を丸めることにはならない
 var highFreqStart = 8000;
 var highFreqMinGain = 0.25;
+// 音量の下限(dB)。最大の音量をどこに合わせても、静かな部屋の物音より小さくなる幅にする
+var minAmpDb = -60;
 // 層を足し合わせると音量の値の上限を超えるため、音割れしないよう少し余裕を持たせた上限に抑える
 var limiterLevel = 0.9;
 var pythonAddress = NetAddr("127.0.0.1", 9000);
@@ -29,11 +31,14 @@ var pythonAddress = NetAddr("127.0.0.1", 9000);
 // lagは指数的に近づき、最初の1秒ほどで大半が動いてしまうため、一定の速さで移るVarLagを使う
 var smooth = { |value| VarLag.kr(value.clip(0, 1), transitionSeconds) };
 var highFreqGain = { |freq| freq.explin(highFreqStart, maxFreq, 1, highFreqMinGain) };
+// 音量の0〜1は、dBに対応させる。耳は音の大きさも比で感じるため、0〜1を均等に分けた区画が、耳にとっても均等になる
+// 0で無音になり、全ての層を0にして無音を表せるよう、下限のdBの振幅を差し引き、1で1に戻るよう割り直す
+var ampToGain = { |amp| (amp.linlin(0, 1, minAmpDb, 0).dbamp - minAmpDb.dbamp) / (1 - minAmpDb.dbamp) };
 
 // 各層のファイルは、共通の値と処理を受け取ってSynthDefを作る関数を返す(ファイルの最後の値が戻り値になる)
 var layerSynthDefs = layers.collect { |layer|
 	var makeSynthDef = thisProcess.interpreter.executeFile(directory +/+ layer.fileName);
-	makeSynthDef.(smooth, highFreqGain, minFreq, maxFreq);
+	makeSynthDef.(smooth, ampToGain, highFreqGain, minFreq, maxFreq);
 };
 var mic = thisProcess.interpreter.executeFile(directory +/+ "mic.scd");
 
