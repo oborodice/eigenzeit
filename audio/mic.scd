@@ -28,12 +28,12 @@ var synthDef = SynthDef(\mic, {
 	var average = { |signal| beforeReset.(Sweep.ar(trigger, signal)) * sendRate };
 	var powerDb = { |signal| average.(signal.squared).max(10 ** (minDb / 10)).log10 * 10 };
 	var totalDb = powerDb.(input);
-	// 帯域ごとの値は全体の大きさとの差で表し、音色(どの帯域に偏っているか)と音量を分ける
+	// 帯域ごとの値は絶対の大きさで表す。全体の大きさとの差にすると、鳴らした帯域が上がっても全体も上がるため、その効果が打ち消されて見えにくくなる
 	// FFTは成分が等間隔に並び低い帯域が粗くなるため、帯域ごとのフィルタで測る
 	// 1回通すだけでは隣の帯域に7dBほど下がっただけの音が漏れ、帯域を分けた意味が薄れるため、2回通して14dBほど下げる
 	var bandDbs = bandCenters.collect { |center|
 		var band = BBandPass.ar(BBandPass.ar(input, center, bandOctaves), center, bandOctaves);
-		powerDb.(band) - totalDb;
+		powerDb.(band);
 	};
 	var chain = FFT(LocalBuf(fftSize), input);
 	var flatness = average.(SpecFlatness.kr(chain));
@@ -52,7 +52,7 @@ var toJson = { |self, values|
 	var flatness = values[bandCount + 1].round(flatnessStep);
 	// SendReplyは数も小数で送るため、整数に直す
 	var onsetCount = values[bandCount + 2].asInteger;
-	"{\"band_rel_db\": [%], \"total_db\": %, \"flatness\": %, \"onset_count\": %}".format(
+	"{\"band_db\": [%], \"total_db\": %, \"flatness\": %, \"onset_count\": %}".format(
 		bandDbs.join(", "), totalDb, flatness, onsetCount
 	);
 };

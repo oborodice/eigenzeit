@@ -17,7 +17,7 @@ STATISTICS = {
 # 入力の名前ごとに、どの統計でまとめるか
 INPUT_STATISTICS = {
     # マイクは、1秒に数回揺れるうなりのような変化も捉えられるよう、平均に加えてばらつきも残す
-    "band_rel_db": ("mean", "std"),
+    "band_db": ("mean", "std"),
     "total_db": ("mean", "std"),
     "flatness": ("mean", "std"),
     # 立ち上がりは、刻みの中で何回起きたかを数える

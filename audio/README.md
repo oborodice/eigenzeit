@@ -44,10 +44,10 @@ $ /Applications/SuperCollider.app/Contents/MacOS/sclang main.scd
   - 値は1つの文字列で、名前を付けたJSONのオブジェクト
 
 ```json
-{"band_rel_db": [-23.1, ..., -41.8], "total_db": -54.6, "flatness": 0.0123, "onset_count": 0}
+{"band_db": [-77.7, ..., -96.4], "total_db": -54.6, "flatness": 0.0123, "onset_count": 0}
 ```
 
-- `band_rel_db` : 1/3オクターブの帯域ごとの大きさ(中心63Hz〜20kHzの26個、低い順)を、全体の大きさとの差で表した値(dB、小数第2位まで)
+- `band_db` : 1/3オクターブの帯域ごとの大きさ(中心63Hz〜20kHzの26個、低い順。dB、小数第2位まで)
 - `total_db` : 全体の大きさ(dB、小数第2位まで)
 - `flatness` : ノイズっぽさ(0〜1、高さのある音ほど0、ノイズほど1に近い。小数第4位まで)
 - `onset_count` : 前に送ってから今までに、音が急に立ち上がった回数

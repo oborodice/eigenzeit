@@ -23,7 +23,7 @@ $ uv run summarize_steps.py recordings/20261029-222726.jsonl
 - `model` の行: play_random.pyが鳴らした値を含める。キーは値を送ったOSCのアドレスで、値の並びは [audio/README.md > 受信するOSC](../audio/README.md#受信するosc) を参照
 
 ```json
-{"received_at": 1793186093.472, "source": "audio", "band_rel_db": [-23.1, ..., -41.8], "total_db": -54.6, "flatness": 0.0123, "onset_count": 0}
+{"received_at": 1793186093.472, "source": "audio", "band_db": [-77.7, ..., -96.4], "total_db": -54.6, "flatness": 0.0123, "onset_count": 0}
 {"received_at": 1793186093.777, "source": "sensing", "time_ms": 126000, "co2_ppm": 612}
 {"received_at": 1793186100.002, "source": "model", "/sines/1": [0.5526, 0.0143, 0.0169, 0.3967, 0.7708], "/sines/2": [0.0805, 0.8729, 0.5504, 0.8481, 0.624], "/clicks": [0.1652, 0.5558, 0.9442, 0.266], "/noise": [0.9185, 0.1665, 0.799]}
 ```
@@ -33,6 +33,6 @@ $ uv run summarize_steps.py recordings/20261029-222726.jsonl
 - 刻み: `model` の行から次の `model` の行まで。音が移り、残響が落ち着くまでの最初の3秒は使わない
 - `played_at` : 鳴らした値を記録した時刻、 `sound` : 鳴らした値
 - `inputs` : 刻みの中に届いた入力をまとめた値(配列は要素ごとにまとめる)。届かなかった入力は含めない
-  - `band_rel_db` 、 `total_db` 、 `flatness` 、 `thermal_c` : 平均( `_mean` )とばらつき( `_std` 、標準偏差)
+  - `band_db` 、 `total_db` 、 `flatness` 、 `thermal_c` : 平均( `_mean` )とばらつき( `_std` 、標準偏差)
   - `onset_count` : 合計( `_sum` )
   - `wifi_rssi_hist` 、 `ble_rssi_hist` 、 `co2_ppm` : 平均( `_mean` )
