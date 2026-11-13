@@ -9,7 +9,10 @@ $ uv run record.py
 $ uv run play_random.py
 
 # 記録を刻みごとに分け、鳴らした値と、その音が鳴っている間の入力をまとめた値を、1刻み1行で表示する
-$ uv run summarize_steps.py recordings/20261029-222726.jsonl
+$ uv run summarize_steps.py recordings/20261113-082322.jsonl
+
+# 記録で、予測するモデルを1刻みずつ早送りで学ばせ、予測のずれが刻みを追ってどう変わるかを表示する
+$ uv run check_prediction.py recordings/20261113-082322.jsonl
 ```
 
 ## 記録の形式
@@ -25,7 +28,7 @@ $ uv run summarize_steps.py recordings/20261029-222726.jsonl
 ```json
 {"received_at": 1793186093.472, "source": "audio", "band_db": [-77.7, ..., -96.4], "total_db": -54.6, "flatness": 0.0123, "onset_count": 0}
 {"received_at": 1793186093.777, "source": "sensing", "time_ms": 126000, "co2_ppm": 612}
-{"received_at": 1793186100.002, "source": "model", "/sines/1": [0.5526, 0.0143, 0.0169, 0.3967, 0.7708], "/sines/2": [0.0805, 0.8729, 0.5504, 0.8481, 0.624], "/clicks": [0.1652, 0.5558, 0.9442, 0.266], "/noise": [0.9185, 0.1665, 0.799]}
+{"received_at": 1793186100.002, "source": "model", "/sines/1": [0.5526, 0.0143, 0.0169, 0.3967, 0.2113, 0.6402, 0.7708], "/sines/2": [0.0805, 0.8729, 0.5504, 0.8481, 0.0377, 0.4915, 0.624], "/clicks": [0.1652, 0.5558, 0.9442, 0.266], "/noise": [0.9185, 0.1665, 0.799]}
 ```
 
 ## 刻みごとのまとめ
@@ -36,3 +39,13 @@ $ uv run summarize_steps.py recordings/20261029-222726.jsonl
   - `band_db` 、 `total_db` 、 `flatness` 、 `thermal_c` : 平均( `_mean` )とばらつき( `_std` 、標準偏差)
   - `onset_count` : 合計( `_sum` )
   - `wifi_rssi_hist` 、 `ble_rssi_hist` 、 `co2_ppm` : 平均( `_mean` )
+
+## 予測の確かめ
+
+- 刻みtの入力と、刻みt+1で鳴らした値から、刻みt+1の入力を予測する。予測してずれを測ってから学ぶ
+- 入力が揃わない刻み(CoreS3が抜けていたときなど)は使わない
+- 比べる3つ
+  - `unchanged` : 次の刻みも今と同じと予測する
+  - `without_sound` : 鳴らした値を見せずに学ぶネット
+  - `with_sound` : 鳴らした値も見せて学ぶネット
+- ずれは、値ごとに記録全体のばらつきを1とした単位の二乗の平均。入力の種類(`mic` 、 `thermal` 、 `radio` 、 `co2`)ごとと、種類を同じ重みで平均した全体( `total` )を、100刻みごとに表示する
