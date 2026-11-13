@@ -5,13 +5,10 @@
 // 狭い幅ほど少しの違いで聴こえ方が大きく変わるため、対数で対応付ける
 var minBandOctaves = 0.01;
 var maxBandOctaves = 10;
-// 幅を変えても音の大きさが揃うよう、どの幅でもこの実効値になるように音量を補う
-// 実効値0.25なら、狭い帯域で山が揃っても1を超えることはまれで、超えた分はmain.scdの上限で抑えられる
-var targetRms = 0.25;
 // WhiteNoiseは-1〜1に均等に散らばるため、実効値は1/√3になる
 var whiteNoiseRms = 3.sqrt.reciprocal;
 
-{ |smooth, ampToGain, freqGain, minFreq, maxFreq|
+{ |smooth, ampToGain, freqGain, layerRms, minFreq, maxFreq|
 	// out以外の値は全て0〜1で受け取る。並びがOSCで送る値の順番になる
 	SynthDef(\noise, { |out, center = 0, width = 0, amp = 0|
 		var centerFreq = smooth.(center).linexp(0, 1, minFreq, maxFreq);
@@ -22,7 +19,8 @@ var whiteNoiseRms = 3.sqrt.reciprocal;
 		// 幅(Hz)は、中心から上下に半分ずつ広げた範囲の、上端と下端の差
 		var bandHz = centerFreq * ((2 ** (bandOctaves / 2)) - (2 ** (bandOctaves.neg / 2)));
 		var passedHz = (bandHz * 0.5pi).min(nyquist);
-		var gain = (nyquist / passedHz).sqrt * (targetRms / whiteNoiseRms);
+		// 幅を変えても音の大きさが揃うよう、どの幅でも他の層と同じ実効値になるように補う
+		var gain = (nyquist / passedHz).sqrt * (layerRms / whiteNoiseRms);
 		var band = BBandPass.ar(WhiteNoise.ar, centerFreq, bandOctaves) * gain;
 		// 広い帯域では高い成分は全体に散らばった一部でしかなく、鋭く高い音にはならないため、高い音かどうかは中心で判断する
 		Out.ar(out, band * freqGain.(centerFreq) * volume ! 2);

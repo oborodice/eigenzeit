@@ -24,7 +24,7 @@ var maxWobbleOctaves = 1;
 thisThread.randSeed = 1;
 jitterOffsets = { maxJitterSlots.rand2 } ! maxVoices;
 
-{ |smooth, ampToGain, freqGain, minFreq, maxFreq|
+{ |smooth, ampToGain, freqGain, layerRms, minFreq, maxFreq|
 	// out以外の値は全て0〜1で受け取る(freqもHzではない)。並びがOSCで送る値の順番になる
 	SynthDef(\sines, { |out, freq = 0, count = 0, spread = 0, jitter = 0, wobbleRate = 0, wobbleDepth = 0, amp = 0|
 		var baseFreq = smooth.(freq).linexp(0, 1, minFreq, maxFreq);
@@ -37,16 +37,17 @@ jitterOffsets = { maxJitterSlots.rand2 } ! maxVoices;
 		// ランダムにふらつかせず周期的に揺らし、同じ値からいつも同じ動きになるようにする
 		var wobble = SinOsc.kr(wobbleHz) * wobbleOctaves;
 		var volume = ampToGain.(smooth.(amp));
+		// 本数の端数の分はその音量で鳴らし、本数の増減がフェードになるようにする
+		var voiceAmps = maxVoices.collect { |i| (voiceCount - i).clip(0, 1) };
+		// 高さの違うサイン波を重ねた実効値は、振幅の二乗の和の平方根に比例する。本数によらず、合わせた実効値を揃える
+		var normalization = layerRms * 2.sqrt / voiceAmps.squared.sum.sqrt;
 		var voices = maxVoices.collect { |i|
 			// 基準の周波数から 0, +1, -1, +2, -2, … 段の位置に並べ、本数を増やすと外側に足されていく
 			var slot = (i + 1).div(2) * if(i.odd, 1, -1);
 			var position = slot + (jitterOffsets[i] * smoothedJitter);
 			var voiceFreq = (baseFreq * (2 ** ((position * stepOctaves) + wobble))).clip(minFreq, maxFreq);
-			// 本数の端数の分はその音量で鳴らし、本数の増減がフェードになるようにする
-			var voiceAmp = (voiceCount - i).clip(0, 1);
-			SinOsc.ar(voiceFreq) * voiceAmp * freqGain.(voiceFreq);
+			SinOsc.ar(voiceFreq) * voiceAmps[i] * freqGain.(voiceFreq);
 		};
-		// 本数で割り、全ての波の山が重なっても音量の値を超えないようにする
-		Out.ar(out, voices.sum / voiceCount * volume ! 2);
+		Out.ar(out, voices.sum * normalization * volume ! 2);
 	});
 }

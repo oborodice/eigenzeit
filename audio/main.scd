@@ -29,6 +29,11 @@ var tiltStartFreq = 1000;
 var tiltDbPerOctave = -3;
 // 音量の下限(dB)。最大の音量をどこに合わせても、静かな部屋の物音より小さくなる幅にする
 var minAmpDb = -60;
+// 音量の値が1のときに、どの層も揃える実効値。サイン波1本を振幅1で鳴らしたとき(実効値1/√2)より低くする
+// クリック1回は、揺れの山を出力の上限より大きくできないため、まばらなクリックほど実効値が小さい。他の層を下げて、なるべく多くのクリックと揃える
+// 低くするほど少ない頻度のクリックまで揃うが、下げた分スピーカーのつまみを大きく上げる必要がある
+var layerRmsDb = -15;
+var layerRms = 2.sqrt.reciprocal * layerRmsDb.dbamp;
 // 層を足し合わせると音量の値の上限を超えるため、音割れしないよう少し余裕を持たせた上限に抑える
 var limiterLevel = 0.9;
 var pythonAddress = NetAddr("127.0.0.1", 9000);
@@ -47,7 +52,7 @@ var ampToGain = { |amp| (amp.linlin(0, 1, minAmpDb, 0).dbamp - minAmpDb.dbamp) /
 // 各層のファイルは、共通の値と処理を受け取ってSynthDefを作る関数を返す(ファイルの最後の値が戻り値になる)
 var layerSynthDefs = layers.collect { |layer|
 	var makeSynthDef = thisProcess.interpreter.executeFile(directory +/+ layer.fileName);
-	makeSynthDef.(smooth, ampToGain, freqGain, minFreq, maxFreq);
+	makeSynthDef.(smooth, ampToGain, freqGain, layerRms, minFreq, maxFreq);
 };
 var mic = thisProcess.interpreter.executeFile(directory +/+ "mic.scd");
 
