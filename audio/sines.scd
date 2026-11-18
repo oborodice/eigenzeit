@@ -24,9 +24,10 @@ var maxWobbleOctaves = 1;
 thisThread.randSeed = 1;
 jitterOffsets = { maxJitterSlots.rand2 } ! maxVoices;
 
-{ |smooth, ampToGain, freqGain, layerRms, minFreq, maxFreq|
+{ |makeSmooth, ampToGain, freqGain, layerRms, minFreq, maxFreq|
 	// out以外の値は全て0〜1で受け取る(freqもHzではない)。並びがOSCで送る値の順番になる
-	SynthDef(\sines, { |out, freq = 0, count = 0, spread = 0, jitter = 0, wobbleRate = 0, wobbleDepth = 0, amp = 0|
+	SynthDef(\sines, { |out, freq = 0, count = 0, spread = 0, jitter = 0, wobbleRate = 0, wobbleDepth = 0, amp = 0, transition = 0|
+		var smooth = makeSmooth.(transition);
 		var baseFreq = smooth.(freq).linexp(0, 1, minFreq, maxFreq);
 		var voiceCount = smooth.(count).linlin(0, 1, 1, maxVoices);
 		var stepOctaves = smooth.(spread).linexp(0, 1, minStepOctaves, maxStepOctaves);

@@ -30,9 +30,10 @@ var clickTrainRms = { |clickRate, clickFreq|
 	(0.5 * (squaredEnvelope - squaredEnvelopeCos) / (1 - endExp).squared * clickRate).sqrt;
 };
 
-{ |smooth, ampToGain, freqGain, layerRms, minFreq, maxFreq|
+{ |makeSmooth, ampToGain, freqGain, layerRms, minFreq, maxFreq|
 	// out以外の値は全て0〜1で受け取る。並びがOSCで送る値の順番になる
-	SynthDef(\clicks, { |out, rate = 0, irregularity = 0, brightness = 0, amp = 0|
+	SynthDef(\clicks, { |out, rate = 0, irregularity = 0, brightness = 0, amp = 0, transition = 0|
+		var smooth = makeSmooth.(transition);
 		var clickRate = smooth.(rate).linexp(0, 1, minRate, maxFreq);
 		var smoothedIrregularity = smooth.(irregularity);
 		var clickFreq = smooth.(brightness).linexp(0, 1, minFreq, maxFreq);

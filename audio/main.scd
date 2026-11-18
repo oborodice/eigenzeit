@@ -1,18 +1,17 @@
 (
 // 各層のファイルはこのファイルと同じ場所から読み込む。起動を待つ間は実行中のファイルの場所が取れないため、先に控えておく
 var directory = thisProcess.nowExecutingPath.dirname;
-// 各層のファイルと、そこから作るSynthの数。2つ以上作る層は、OSCのアドレスに1からの番号を付ける(/sines/1、/sines/2)
-// サイン波は、低い所のうなりと鋭く高い音を同時に鳴らせるよう2つにする。どちらも全範囲を使い、組み合わせ方はAIが選ぶ
-var layers = [
-	(fileName: "sines.scd", synthCount: 2),
-	(fileName: "clicks.scd", synthCount: 1),
-	(fileName: "noise.scd", synthCount: 1),
-];
-// 新しい値へは、この時間をかけて一定の速さで移る
-// 値が一瞬で跳ぶと波の形が途切れ、プツッという音が耳やツイーターの負担になるため、少なくとも数十ミリ秒はかける
-// それより長いのは、一瞬では変われない生き物の体のような性質を、AIの体に持たせるため
-// AIが音を選び直す間隔より短くし、移り終わってから観測できるようにする
-var transitionSeconds = 2;
+// 各層のファイル。どの層もSynthを2つ作り、OSCのアドレスに1からの番号を付ける(/sines/1、/sines/2)
+// 同じ種類の音を2通り同時に鳴らせるようにする(低い所のうなりと鋭く高い音など)。どちらも全範囲を使い、組み合わせ方はAIが選ぶ
+// 種類によって数が違うと、数の多い種類の音がいつも前に出るため、どの種類も同じ数にする
+var layerFileNames = ["sines.scd", "clicks.scd", "noise.scd"];
+var synthsPerLayer = 2;
+// 新しい値へ移る時間の範囲。どの層も最後の値で、この範囲から一定の速さで移る時間を選ぶ
+// 移り方まで含めてAIが選び、10秒ごとの場面の切り替えにも、切れ目なく動き続ける音にもなれるようにする
+// 下限は、値が一瞬で跳ぶと波の形が途切れ、プツッという音が耳やツイーターの負担になるため、数十ミリ秒にする
+// 上限は、AIが音を選び直す10秒の間に移り終わらず、次の値へそのまま移り続けられる長さにする(間隔を変えたら見直す)
+var minTransitionSeconds = 0.05;
+var maxTransitionSeconds = 20;
 // 下限はHS5が出せる低さ、上限は人間に聞こえる範囲の上限に合わせる。耳は周波数の比で高さを感じるため、対数で対応付ける
 // 下限は聴きやすくするための調整ではなく、出せない低さを無理に鳴らしてウーファーを傷めないための制限である
 var minFreq = 55;
@@ -32,15 +31,21 @@ var minAmpDb = -60;
 // 音量の値が1のときに、どの層も揃える実効値。サイン波1本を振幅1で鳴らしたとき(実効値1/√2)より低くする
 // クリック1回は、揺れの山を出力の上限より大きくできないため、まばらなクリックほど実効値が小さい。他の層を下げて、なるべく多くのクリックと揃える
 // 低くするほど少ない頻度のクリックまで揃うが、下げた分スピーカーのつまみを大きく上げる必要がある
-var layerRmsDb = -15;
+// -25dBでは、クリックは1秒に、明るさ100Hzなら約1回、1kHzなら約9回、10kHzなら約90回から揃う
+var layerRmsDb = -25;
 var layerRms = 2.sqrt.reciprocal * layerRmsDb.dbamp;
 // 層を足し合わせると音量の値の上限を超えるため、音割れしないよう少し余裕を持たせた上限に抑える
 var limiterLevel = 0.9;
 var pythonAddress = NetAddr("127.0.0.1", 9000);
 
+// 移る時間の値(0〜1)から、層の値を滑らかに移す処理を作る。移る時間は、移る長さの比で感じるため、対数で対応付ける
 // 0〜1のまま滑らかにしてから実際の値に直し、周波数の高さによって動きの速さが変わって聴こえないようにする
 // lagは指数的に近づき、最初の1秒ほどで大半が動いてしまうため、一定の速さで移るVarLagを使う
-var smooth = { |value| VarLag.kr(value.clip(0, 1), transitionSeconds) };
+// 移る時間はすぐに切り替え、層の他の値と一緒に送られた時間で、その値へ移るようにする
+var makeSmooth = { |transition|
+	var seconds = transition.clip(0, 1).linexp(0, 1, minTransitionSeconds, maxTransitionSeconds);
+	{ |value| VarLag.kr(value.clip(0, 1), seconds) };
+};
 var highFreqGain = { |freq| freq.explin(highFreqStart, maxFreq, 1, highFreqMinGain) };
 var tiltGain = { |freq| ((freq.max(tiltStartFreq) / tiltStartFreq).log2 * tiltDbPerOctave).dbamp };
 // 理由の違う2つの制限を、周波数ごとの音量の倍率として1つにまとめて各層に渡す
@@ -50,9 +55,9 @@ var freqGain = { |freq| tiltGain.(freq) * highFreqGain.(freq) };
 var ampToGain = { |amp| (amp.linlin(0, 1, minAmpDb, 0).dbamp - minAmpDb.dbamp) / (1 - minAmpDb.dbamp) };
 
 // 各層のファイルは、共通の値と処理を受け取ってSynthDefを作る関数を返す(ファイルの最後の値が戻り値になる)
-var layerSynthDefs = layers.collect { |layer|
-	var makeSynthDef = thisProcess.interpreter.executeFile(directory +/+ layer.fileName);
-	makeSynthDef.(smooth, ampToGain, freqGain, layerRms, minFreq, maxFreq);
+var layerSynthDefs = layerFileNames.collect { |fileName|
+	var makeSynthDef = thisProcess.interpreter.executeFile(directory +/+ fileName);
+	makeSynthDef.(makeSmooth, ampToGain, freqGain, layerRms, minFreq, maxFreq);
 };
 var mic = thisProcess.interpreter.executeFile(directory +/+ "mic.scd");
 
@@ -74,14 +79,12 @@ s.waitForBoot {
 	// 各層より後に計算されるよう、末尾に置く(各層は先頭に置かれる)
 	Synth.tail(s, \output);
 
-	layers.do { |layer, layerIndex|
-		var synthDef = layerSynthDefs[layerIndex];
+	layerSynthDefs.do { |synthDef|
 		// OSCの値は、SynthDefの引数の並び(書き出し先のoutを除く)の順に割り当て、順番を書く場所を1か所にする
 		var paramNames = synthDef.allControlNames.collect(_.name).reject(_ == \out);
-		layer.synthCount.do { |synthIndex|
+		synthsPerLayer.do { |synthIndex|
 			var synth = Synth(synthDef.name, [\out, mixBus]);
-			var suffix = if(layer.synthCount > 1, { "/" ++ (synthIndex + 1) }, { "" });
-			var address = ("/" ++ synthDef.name ++ suffix).asSymbol;
+			var address = ("/" ++ synthDef.name ++ "/" ++ (synthIndex + 1)).asSymbol;
 			OSCdef(address, { |msg|
 				// msgの0番目はアドレスのため、値は1番目から
 				synth.set(*paramNames.collect { |name, paramIndex| [name, msg[paramIndex + 1]] }.flatten);

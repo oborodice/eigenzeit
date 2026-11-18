@@ -8,6 +8,9 @@ $ uv run record.py
 # record.pyと同じように記録しながら、10秒ごとにSuperColliderの各層の値を0〜1の乱数で選び直して鳴らし、鳴らした値も記録する(Ctrl+Cで終了)
 $ uv run play_random.py
 
+# record.pyと同じように記録しながら、10秒ごとに、最近一番予測が上達している区画を選んで鳴らし、その場で予測を学ぶ(Ctrl+Cで終了)
+$ uv run play_curious.py
+
 # 記録を刻みごとに分け、鳴らした値と、その音が鳴っている間の入力をまとめた値を、1刻み1行で表示する
 $ uv run summarize_steps.py recordings/20261113-082322.jsonl
 
@@ -20,20 +23,25 @@ $ uv run check_prediction.py recordings/20261113-082322.jsonl
 - 形式: JSON Lines(1行に1つのJSONオブジェクト)
 - 全ての行に、次の2つを付ける
   - `received_at` : 受信したときのPCの時刻(UNIX時刻、秒)
-  - `source` : 送り元(`sensing` 、 `audio` 、 `model` のどれか)
+  - `source` : 送り元(`sensing` 、 `audio` 、 `model` 、 `curiosity` のどれか)
 - `sensing` の行: CoreS3から届いた値をそのまま含める。形式は [sensing/README.md > 送信データ](../sensing/README.md#送信データ) を参照
 - `audio` の行: SuperColliderから127.0.0.1:9000にOSCの `/mic` で届いた値をそのまま含める。形式は [audio/README.md > 送信するOSC](../audio/README.md#送信するosc) を参照
-- `model` の行: play_random.pyが鳴らした値を含める。キーは値を送ったOSCのアドレスで、値の並びは [audio/README.md > 受信するOSC](../audio/README.md#受信するosc) を参照
+- `model` の行: play_random.pyかplay_curious.pyが鳴らした値を含める。キーは値を送ったOSCのアドレスで、値の並びは [audio/README.md > 受信するOSC](../audio/README.md#受信するosc) を参照
+- `curiosity` の行: play_curious.pyが、刻みのずれから学んだときに書く
+  - `region` : その刻みで鳴らした区画(0〜31)
+  - `error` : 学ぶ前の予測のずれ(入力の種類ごとに、正規化した単位の二乗の平均を求め、種類どうしを同じ重みで平均した値)
+  - `progress` : その区画の上達(少し前の4回と最近の4回のずれの平均の差。揃うまでは0)
 
 ```json
 {"received_at": 1793186093.472, "source": "audio", "band_db": [-77.7, ..., -96.4], "total_db": -54.6, "flatness": 0.0123, "onset_count": 0}
 {"received_at": 1793186093.777, "source": "sensing", "time_ms": 126000, "co2_ppm": 612}
-{"received_at": 1793186100.002, "source": "model", "/sines/1": [0.5526, 0.0143, 0.0169, 0.3967, 0.2113, 0.6402, 0.7708], "/sines/2": [0.0805, 0.8729, 0.5504, 0.8481, 0.0377, 0.4915, 0.624], "/clicks": [0.1652, 0.5558, 0.9442, 0.266], "/noise": [0.9185, 0.1665, 0.799]}
+{"received_at": 1793186100.002, "source": "model", "/sines/1": [0.5526, 0.0143, 0.0169, 0.3967, 0.2113, 0.6402, 0.7708, 0.4121], "/sines/2": [...], "/clicks/1": [0.1652, 0.5558, 0.9442, 0.266, 0.0931], "/clicks/2": [...], "/noise/1": [0.9185, 0.1665, 0.799, 0.6617], "/noise/2": [...]}
+{"received_at": 1793186110.004, "source": "curiosity", "region": 17, "error": 0.4123, "progress": 0.0215}
 ```
 
 ## 刻みごとのまとめ
 
-- 刻み: `model` の行から次の `model` の行まで。音が移り、残響が落ち着くまでの最初の3秒は使わない
+- 刻み: `model` の行から次の `model` の行まで。移る時間はAIが選ぶため、移る途中も含めて全ての行を使う
 - `played_at` : 鳴らした値を記録した時刻、 `sound` : 鳴らした値
 - `inputs` : 刻みの中に届いた入力をまとめた値(配列は要素ごとにまとめる)。届かなかった入力は含めない
   - `band_db` 、 `total_db` 、 `flatness` 、 `thermal_c` : 平均( `_mean` )とばらつき( `_std` 、標準偏差)
@@ -42,7 +50,8 @@ $ uv run check_prediction.py recordings/20261113-082322.jsonl
 
 ## 予測の確かめ
 
-- 刻みtの入力と、刻みt+1で鳴らした値から、刻みt+1の入力を予測する。予測してずれを測ってから学ぶ
+- 刻みtの入力と、刻みtと刻みt+1で鳴らした値から、刻みt+1の入力を予測する。予測してずれを測ってから学ぶ
+  - 刻みtで鳴らした値も見せるのは、移る時間が長いと、刻みt+1の音が刻みtの値からどこまで移ったかで決まるため
 - 入力が揃わない刻み(CoreS3が抜けていたときなど)は使わない
 - 比べる3つ
   - `unchanged` : 次の刻みも今と同じと予測する

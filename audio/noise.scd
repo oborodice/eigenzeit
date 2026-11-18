@@ -8,9 +8,10 @@ var maxBandOctaves = 10;
 // WhiteNoiseは-1〜1に均等に散らばるため、実効値は1/√3になる
 var whiteNoiseRms = 3.sqrt.reciprocal;
 
-{ |smooth, ampToGain, freqGain, layerRms, minFreq, maxFreq|
+{ |makeSmooth, ampToGain, freqGain, layerRms, minFreq, maxFreq|
 	// out以外の値は全て0〜1で受け取る。並びがOSCで送る値の順番になる
-	SynthDef(\noise, { |out, center = 0, width = 0, amp = 0|
+	SynthDef(\noise, { |out, center = 0, width = 0, amp = 0, transition = 0|
+		var smooth = makeSmooth.(transition);
 		var centerFreq = smooth.(center).linexp(0, 1, minFreq, maxFreq);
 		var bandOctaves = smooth.(width).linexp(0, 1, minBandOctaves, maxBandOctaves);
 		var volume = ampToGain.(smooth.(amp));

@@ -4,9 +4,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-# 音を選び直してから、audio/main.scdの2秒の移りと、残響が落ち着くまでの1秒ほどを待ってから観測する
-# 移りの時間を変えたら見直す
-SETTLE_SECONDS = 3
+from sound import PLAY_SOURCE, Sound
 
 STATISTICS = {
     "mean": statistics.fmean,
@@ -37,23 +35,18 @@ def read_recording(path: Path) -> list[dict]:
 
 
 # 鳴らした値と、その音が鳴っている間の行の組に分ける
+# 移る時間はAIが選ぶ値のため、移り終わるのを待たず、移る途中も含めて刻みの全ての行を観測に使う
 # 最初に鳴らす前の行と、最後に鳴らした後の続きのない刻みは使わない
 def split_into_steps(rows: list[dict]) -> list[tuple[dict, list[dict]]]:
-    play_indices = [i for i, row in enumerate(rows) if row["source"] == "model"]
-    steps = []
-    for start, end in zip(play_indices, play_indices[1:]):
-        play_row = rows[start]
-        observe_from = play_row["received_at"] + SETTLE_SECONDS
-        observed_rows = [row for row in rows[start + 1 : end] if row["received_at"] >= observe_from]
-        steps.append((play_row, observed_rows))
-    return steps
+    play_indices = [i for i, row in enumerate(rows) if row["source"] == PLAY_SOURCE]
+    return [(rows[start], rows[start + 1 : end]) for start, end in zip(play_indices, play_indices[1:])]
 
 
-def played_values(play_row: dict) -> dict:
+def played_values(play_row: dict) -> Sound:
     return {key: value for key, value in play_row.items() if key not in ("received_at", "source")}
 
 
-def summarize_elementwise(values: list, statistic: Callable[[list], float]) -> float | list[float]:
+def _summarize_elementwise(values: list, statistic: Callable[[list], float]) -> float | list[float]:
     if isinstance(values[0], list):
         return [statistic(list(element_values)) for element_values in zip(*values)]
     return statistic(values)
@@ -67,7 +60,7 @@ def summarize_inputs(rows: list[dict]) -> dict:
         if not values:
             continue
         for statistic_name in statistic_names:
-            summary[f"{name}_{statistic_name}"] = summarize_elementwise(values, STATISTICS[statistic_name])
+            summary[f"{name}_{statistic_name}"] = _summarize_elementwise(values, STATISTICS[statistic_name])
     return summary
 
 

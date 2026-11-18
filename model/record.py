@@ -1,6 +1,7 @@
 import json
 import threading
 import time
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import TextIO
@@ -22,7 +23,7 @@ CORES3_USB_PID = 0x1001
 RETRY_INTERVAL_SECONDS = 1
 
 # audio/main.scdがマイクの特徴量を送る先
-OSC_ADDRESS = ("127.0.0.1", 9000)
+MIC_ADDRESS = ("127.0.0.1", 9000)
 
 
 # シリアル、OSC、鳴らす処理など、複数のスレッドから書くため、1行を書き終えるまで他のスレッドが書かないようにする
@@ -33,7 +34,10 @@ class Recording:
 
     # CoreS3とSuperColliderはそれぞれの起動からの時間しか持たないため、受け取った時刻を付けて並べられるようにする
     def write(self, source: str, values: dict) -> None:
-        line = json.dumps({"received_at": round(time.time(), RECEIVED_AT_DECIMALS), "source": source, **values})
+        self._write_row({"received_at": round(time.time(), RECEIVED_AT_DECIMALS), "source": source, **values})
+
+    def _write_row(self, row: dict) -> None:
+        line = json.dumps(row)
         with self._lock:
             print(line)
             self._file.write(line + "\n")
@@ -41,24 +45,24 @@ class Recording:
             self._file.flush()
 
 
-def find_cores3_port() -> str | None:
+def _find_cores3_port() -> str | None:
     for port in list_ports.comports():
         if port.vid == CORES3_USB_VID and port.pid == CORES3_USB_PID:
             return port.device
     return None
 
 
-def wait_for_cores3_port() -> str:
-    port = find_cores3_port()
+def _wait_for_cores3_port() -> str:
+    port = _find_cores3_port()
     if port is None:
         print("Waiting for CoreS3")
     while port is None:
         time.sleep(RETRY_INTERVAL_SECONDS)
-        port = find_cores3_port()
+        port = _find_cores3_port()
     return port
 
 
-def parse_json_line(line: str) -> dict | None:
+def _parse_json_line(line: str) -> dict | None:
     try:
         values = json.loads(line)
     except json.JSONDecodeError:
@@ -67,11 +71,11 @@ def parse_json_line(line: str) -> dict | None:
     return values if isinstance(values, dict) else None
 
 
-def record_serial(port: str, recording: Recording) -> None:
+def _record_serial(port: str, recording: Recording) -> None:
     with serial.Serial(port) as connection:
         print(f"Connected to {port}")
         for raw in connection:
-            values = parse_json_line(raw.decode(errors="replace").strip())
+            values = _parse_json_line(raw.decode(errors="replace").strip())
             # 接続した瞬間は行の途中から読み始めることがあるため、JSONとして読めない行は記録しない
             if values is None:
                 continue
@@ -79,11 +83,11 @@ def record_serial(port: str, recording: Recording) -> None:
 
 
 # 展示中にケーブルが抜けたりCoreS3がリセットされたりしても、繋ぎ直して記録を続ける
-def record_serial_with_reconnect(recording: Recording) -> None:
+def _record_serial_with_reconnect(recording: Recording) -> None:
     while True:
-        port = wait_for_cores3_port()
+        port = _wait_for_cores3_port()
         try:
-            record_serial(port, recording)
+            _record_serial(port, recording)
         # 切断とポートを開けない場合のどちらも、この例外になるため、内容を表示して区別できるようにする
         except serial.SerialException as error:
             print(f"Serial error: {error}")
@@ -91,8 +95,8 @@ def record_serial_with_reconnect(recording: Recording) -> None:
             time.sleep(RETRY_INTERVAL_SECONDS)
 
 
-def record_mic_message(recording: Recording, line: str) -> None:
-    values = parse_json_line(line)
+def _record_mic_message(recording: Recording, line: str) -> None:
+    values = _parse_json_line(line)
     if values is None:
         print(f"Invalid mic message: {line}")
         return
@@ -100,16 +104,16 @@ def record_mic_message(recording: Recording, line: str) -> None:
 
 
 # OSCはUDPで接続が要らないため、シリアルと違って繋ぎ直す必要はなく、SuperColliderが後から起動しても届き始める
-def record_mic_in_background(recording: Recording) -> None:
+def _record_mic_in_background(recording: Recording) -> None:
     dispatcher = Dispatcher()
-    dispatcher.map("/mic", lambda _address, line: record_mic_message(recording, line))
-    server = BlockingOSCUDPServer(OSC_ADDRESS, dispatcher)
-    print(f"Listening for OSC on {OSC_ADDRESS[0]}:{OSC_ADDRESS[1]}")
+    dispatcher.map("/mic", lambda _address, line: _record_mic_message(recording, line))
+    server = BlockingOSCUDPServer(MIC_ADDRESS, dispatcher)
+    print(f"Listening for OSC on {MIC_ADDRESS[0]}:{MIC_ADDRESS[1]}")
     # Ctrl+Cで記録を終えるとき、このスレッドの終わりを待たずに一緒に終わるようにする
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
 
-def open_recording_file() -> TextIO:
+def _open_recording_file() -> TextIO:
     path = RECORDINGS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}.jsonl"
     RECORDINGS_DIR.mkdir(exist_ok=True)
     print(f"Recording to {path}")
@@ -117,15 +121,28 @@ def open_recording_file() -> TextIO:
 
 
 # シリアルの受け取りは終わらずに続くため、マイクは先に別のスレッドで受け取り始める
-def record_inputs(recording: Recording) -> None:
-    record_mic_in_background(recording)
-    record_serial_with_reconnect(recording)
+def _record_inputs(recording: Recording) -> None:
+    _record_mic_in_background(recording)
+    _record_serial_with_reconnect(recording)
+
+
+# 入力の記録は終わらずに続くため、別のスレッドで動かし、このスレッドでplayを続ける
+def record_while_playing[R: Recording](make_recording: Callable[[TextIO], R], play: Callable[[R], None]) -> None:
+    try:
+        with _open_recording_file() as file:
+            recording = make_recording(file)
+            # Ctrl+Cで終えるとき、このスレッドの終わりを待たずに一緒に終わるようにする
+            threading.Thread(target=_record_inputs, args=(recording,), daemon=True).start()
+            play(recording)
+    # Ctrl+Cは止める通常の操作のため、エラーとして表示しない
+    except KeyboardInterrupt:
+        pass
 
 
 def main() -> None:
     try:
-        with open_recording_file() as file:
-            record_inputs(Recording(file))
+        with _open_recording_file() as file:
+            _record_inputs(Recording(file))
     # Ctrl+Cは記録を終える通常の操作のため、エラーとして表示しない
     except KeyboardInterrupt:
         pass
