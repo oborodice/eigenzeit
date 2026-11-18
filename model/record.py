@@ -32,6 +32,11 @@ class Recording:
         self._file = file
         self._lock = threading.Lock()
 
+    # 記録のファイルの名前(拡張子なし)。記録を始めた時刻になる
+    @property
+    def name(self) -> str:
+        return Path(self._file.name).stem
+
     # CoreS3とSuperColliderはそれぞれの起動からの時間しか持たないため、受け取った時刻を付けて並べられるようにする
     def write(self, source: str, values: dict) -> None:
         self._write_row({"received_at": round(time.time(), RECEIVED_AT_DECIMALS), "source": source, **values})

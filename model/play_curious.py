@@ -1,6 +1,10 @@
+import argparse
+import os
+import pickle
 import random
 import threading
 from collections import deque
+from pathlib import Path
 from typing import NamedTuple, TextIO
 
 import torch
@@ -35,6 +39,8 @@ EXPLORE_PROBABILITY = 0.2
 SEED = 0
 # 記録が読みやすいよう、ずれと上達は、比べたい差よりずっと細かい0.0001刻みにする
 CURIOSITY_DECIMALS = 4
+STATE_DIR = Path(__file__).parent / "state"
+STATE_SUFFIX = ".pickle"
 
 
 # 鳴らした刻みの区画と音と、その刻みの入力を予測したか
@@ -104,19 +110,62 @@ class _LearningProgress:
         return (sum(errors[: self._window]) - sum(errors[self._window :])) / self._window
 
 
+# 学んだ状態。区画の代表点はSEEDから毎回同じ配置になるため、含めない
+# 前の刻みの音も含めない。続きから始めた最初の1刻みは、前の音を無音として予測する(SuperColliderも起動し直していれば、実際に無音になっている)
+class _LearnedState(NamedTuple):
+    predictor: NetworkPredictor | None
+    learning_progress: _LearningProgress
+    rng_state: tuple
+
+
+# 名前は記録を始めた時刻のため、名前の順で一番後のものが一番新しい
+# ファイルの更新日時は、コピーしただけで変わることがあるため使わない
+def _latest_state_path() -> Path | None:
+    paths = sorted(STATE_DIR.glob(f"*{STATE_SUFFIX}"))
+    return paths[-1] if paths else None
+
+
+def _load_state(path: Path) -> _LearnedState:
+    with path.open("rb") as file:
+        return pickle.load(file)
+
+
+# 書き込みの途中で電源が切れても前の状態が壊れないよう、別のファイルに書き終えてから置き換える
+def _save_state(state: _LearnedState, path: Path) -> None:
+    STATE_DIR.mkdir(exist_ok=True)
+    temporary_path = path.with_suffix(".tmp")
+    with temporary_path.open("wb") as file:
+        pickle.dump(state, file)
+    os.replace(temporary_path, path)
+
+
 # 1刻みごとに、前の刻みの入力を観測して学び、次の区画を選んで鳴らす
 class _CuriousPlayer:
-    def __init__(self, recording: _BufferedRecording) -> None:
+    def __init__(self, recording: _BufferedRecording, state: _LearnedState | None) -> None:
         self._recording = recording
         self._client = SimpleUDPClient(*AUDIO_ADDRESS)
         self._rng = random.Random(SEED)
         self._regions = _Regions(REGION_COUNT, self._rng)
-        self._learning_progress = _LearningProgress(REGION_COUNT, PROGRESS_WINDOW)
-        self._predictor: NetworkPredictor | None = None
         self._step: _PlayedStep | None = None
+        # 起動ごとに記録と同じ名前で保存する。前の起動の状態を上書きせず、どの記録のときの状態かが分かるようにする
+        self._state_path = STATE_DIR / f"{recording.name}{STATE_SUFFIX}"
+        if state is None:
+            self._predictor: NetworkPredictor | None = None
+            self._learning_progress = _LearningProgress(REGION_COUNT, PROGRESS_WINDOW)
+        else:
+            self._predictor = state.predictor
+            self._learning_progress = state.learning_progress
+            # 代表点を置いた後に戻し、区画の配置はSEEDのまま、選び方だけを続きからにする
+            self._rng.setstate(state.rng_state)
+
+    # __init__で戻す状態と対になる
+    def _learned_state(self) -> _LearnedState:
+        return _LearnedState(self._predictor, self._learning_progress, self._rng.getstate())
 
     def play_step(self) -> None:
         self._play_next(self._observe_and_learn())
+        # 電源が急に切れても、直前の刻みまでに学んだことから続けられるよう、刻みごとに保存する
+        _save_state(self._learned_state(), self._state_path)
 
     # 前の刻みの入力が揃っていれば返す。その入力を予測していれば、そのずれから学ぶ
     def _observe_and_learn(self) -> dict | None:
@@ -180,12 +229,23 @@ class _CuriousPlayer:
         self._step = _PlayedStep(region, sound, predicted=inputs is not None)
 
 
-def _play_curiously(recording: _BufferedRecording) -> None:
-    repeat_every_play_interval(_CuriousPlayer(recording).play_step)
+# 初めから学ぶ場合や、前の状態がない場合は、全ての区画を試すところから始める
+def _play_curiously(recording: _BufferedRecording, fresh: bool) -> None:
+    path = None if fresh else _latest_state_path()
+    if path is None:
+        print("Starting with nothing learned")
+        state = None
+    else:
+        print(f"Resuming from {path}")
+        state = _load_state(path)
+    repeat_every_play_interval(_CuriousPlayer(recording, state).play_step)
 
 
 def main() -> None:
-    record_while_playing(_BufferedRecording, _play_curiously)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fresh", action="store_true", help="start with nothing learned instead of the latest state")
+    fresh = parser.parse_args().fresh
+    record_while_playing(_BufferedRecording, lambda recording: _play_curiously(recording, fresh))
 
 
 if __name__ == "__main__":
