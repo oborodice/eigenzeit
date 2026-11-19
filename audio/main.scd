@@ -1,6 +1,7 @@
 (
 // 各層のファイルはこのファイルと同じ場所から読み込む。起動を待つ間は実行中のファイルの場所が取れないため、先に控えておく
-var directory = thisProcess.nowExecutingPath.dirname;
+// sclang main.scd のように起動すると相対パス(.)になり、録音の準備のときと録音を始めるときとでパスが別のものとして比べられ、録音できなかったため、絶対パスにする
+var directory = File.realpath(thisProcess.nowExecutingPath.dirname);
 // 各層のファイル。どの層もSynthを2つ作り、OSCのアドレスに1からの番号を付ける(/sines/1、/sines/2)
 // 同じ種類の音を2通り同時に鳴らせるようにする(低い所のうなりと鋭く高い音など)。どちらも全範囲を使い、組み合わせ方はAIが選ぶ
 // 種類によって数が違うと、数の多い種類の音がいつも前に出るため、どの種類も同じ数にする
@@ -37,6 +38,9 @@ var layerRms = 2.sqrt.reciprocal * layerRmsDb.dbamp;
 // 層を足し合わせると音量の値の上限を超えるため、音割れしないよう少し余裕を持たせた上限に抑える
 var limiterLevel = 0.9;
 var pythonAddress = NetAddr("127.0.0.1", 9000);
+// スピーカーへの出口。出した音を録音するときも、ここから録音する
+var outputBus = 0;
+var recordingsDirectory = directory +/+ "recordings";
 
 // 移る時間の値(0〜1)から、層の値を滑らかに移す処理を作る。移る時間は、移る長さの比で感じるため、対数で対応付ける
 // 0〜1のまま滑らかにしてから実際の値に直し、周波数の高さによって動きの速さが変わって聴こえないようにする
@@ -63,6 +67,10 @@ var mic = thisProcess.interpreter.executeFile(directory +/+ "mic.scd");
 
 // マイクの最も高い帯域(20kHz)の上の端は約22.4kHzで、扱える周波数の上限(サンプリング周波数の半分)を超えないよう48kHzにする
 s.options.sampleRate = 48000;
+// 録音した音は小さく、聴くときに大きくしても量子化の雑音が聞こえないよう、24ビットにする
+// モノラルの24ビットで1時間あたり約0.52GBになる。WAVは1ファイル4GBまでのため、約8時間で上限に届く
+s.recHeaderFormat = "wav";
+s.recSampleFormat = "int24";
 
 s.waitForBoot {
 	var mixBus = Bus.audio(s, 2);
@@ -70,7 +78,7 @@ s.waitForBoot {
 	layerSynthDefs.do(_.add);
 	mic.synthDef.add;
 	SynthDef(\output, {
-		Out.ar(0, Limiter.ar(In.ar(mixBus, 2), limiterLevel));
+		Out.ar(outputBus, Limiter.ar(In.ar(mixBus, 2), limiterLevel));
 	}).add;
 
 	// SynthDefの登録はサーバー側で後から行われるため、終わるのを待ってから鳴らす
@@ -78,6 +86,16 @@ s.waitForBoot {
 
 	// 各層より後に計算されるよう、末尾に置く(各層は先頭に置かれる)
 	Synth.tail(s, \output);
+
+	// リミッターを通した後の、スピーカーに送っているのと同じ音を録音する。左右は同じ音のため、録音するのは片方だけにする
+	// 起動のたびに起動した時刻の名前で録音する。model/の記録と同じ形の名前にし、どの時間帯の記録と対応するかが分かるようにする
+	// 電源が急に切れたときは、ファイルの長さが書き込まれない。ffmpeg -i 元.wav -c copy 直した.wav で直せる
+	File.mkdir(recordingsDirectory);
+	s.record(
+		recordingsDirectory +/+ (Date.getDate.format("%Y%m%d-%H%M%S") ++ "." ++ s.recHeaderFormat),
+		bus: outputBus,
+		numChannels: 1
+	);
 
 	layerSynthDefs.do { |synthDef|
 		// OSCの値は、SynthDefの引数の並び(書き出し先のoutを除く)の順に割り当て、順番を書く場所を1か所にする
@@ -97,5 +115,16 @@ s.waitForBoot {
 	OSCdef(mic.synthDef.name, { |msg|
 		pythonAddress.sendMsg(msg[0], mic.toJson(msg[3..]));
 	}, ("/" ++ mic.synthDef.name).asSymbol, s.addr);
+
+	// run.shがCtrl+Cを受けたときに送る合図。録音したファイルを閉じ、サーバーを終了してから終わる
+	OSCdef(\quit, {
+		fork {
+			s.stopRecording;
+			// ファイルを閉じるのはサーバー側で後から行われるため、終わるのを待つ
+			s.sync;
+			// 録音したファイルは閉じ終えているため、サーバーの終了を確かめられなくても終わり、run.shが待ち続けないようにする
+			s.quit(onComplete: { 0.exit }, onFailure: { 0.exit });
+		};
+	}, '/quit');
 };
 )
