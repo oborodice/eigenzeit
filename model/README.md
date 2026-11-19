@@ -28,13 +28,13 @@ $ uv run check_prediction.py recordings/20261113-082322.jsonl
 - 全ての行に、次の2つを付ける
   - `received_at` : 受信したときのPCの時刻(UNIX時刻、秒)
   - `source` : 送り元(`sensing` 、 `audio` 、 `model` 、 `curiosity` のどれか)
-- `sensing` の行: CoreS3から届いた値をそのまま含める。形式は [sensing/README.md > 送信データ](../sensing/README.md#送信データ) を参照
-- `audio` の行: SuperColliderから127.0.0.1:9000にOSCの `/mic` で届いた値をそのまま含める。形式は [audio/README.md > 送信するOSC](../audio/README.md#送信するosc) を参照
-- `model` の行: play_random.pyかplay_curious.pyが鳴らした値を含める。キーは値を送ったOSCのアドレスで、値の並びは [audio/README.md > 受信するOSC](../audio/README.md#受信するosc) を参照
+- `sensing` の行: CoreS3から届いた値をそのまま含める(形式は [sensing/README.md > 送信データ](../sensing/README.md#送信データ) を参照)
+- `audio` の行: SuperColliderから127.0.0.1:9000にOSCの `/mic` で届いた値をそのまま含める(形式は [audio/README.md > 送信するOSC](../audio/README.md#送信するosc) を参照)
+- `model` の行: play_random.pyかplay_curious.pyが鳴らした値を、送ったOSCのアドレスをキーにして含める(値の並びは [audio/README.md > 受信するOSC](../audio/README.md#受信するosc) を参照)
 - `curiosity` の行: play_curious.pyが、刻みのずれから学んだときに書く
   - `region` : その刻みで鳴らした区画(0〜31)
   - `error` : 学ぶ前の予測のずれ(入力の種類ごとに、正規化した単位の二乗の平均を求め、種類どうしを同じ重みで平均した値)
-  - `progress` : その区画の上達(少し前の4回と最近の4回のずれの平均の差。揃うまでは0)
+  - `progress` : その区画の上達(少し前の4回と最近の4回のずれの平均の差、揃うまでは0)
 
 ```json
 {"received_at": 1793186093.472, "source": "audio", "band_db": [-77.7, ..., -96.4], "total_db": -54.6, "flatness": 0.0123, "onset_count": 0}
@@ -47,25 +47,25 @@ $ uv run check_prediction.py recordings/20261113-082322.jsonl
 
 - play_curious.pyは、刻みごとに、学んだ状態を `state/` に記録と同じ名前( `20261119-053413.pickle` など)で保存する
 - 保存するのは、予測のネット、正規化、区画ごとのずれ、区画と音を選ぶ乱数の状態
-- 続きから始めるときは、名前の時刻が一番新しいものを読み込む。前の起動の状態は上書きしない
-- 予測のネットなどの作りを変えると、前の状態は読み込めずエラーになる。そのときは `--fresh` で始める
+- 続きから始めるときは、前の起動の状態を上書きせずに、名前の時刻が一番新しいものを読み込む
+- 予測のネットなどの作りを変えると、前の状態は読み込めずエラーになるため、そのときは `--fresh` で始める
 
 ## 刻みごとのまとめ
 
-- 刻み: `model` の行から次の `model` の行まで。移る時間はAIが選ぶため、移る途中も含めて全ての行を使う
+- 刻み: `model` の行から次の `model` の行まで(移る時間はAIが選ぶため、移る途中も含めて全ての行を使う)
 - `played_at` : 鳴らした値を記録した時刻、 `sound` : 鳴らした値
-- `inputs` : 刻みの中に届いた入力をまとめた値(配列は要素ごとにまとめる)。届かなかった入力は含めない
+- `inputs` : 刻みの中に届いた入力をまとめた値(配列は要素ごとにまとめ、届かなかった入力は含めない)
   - `band_db` 、 `total_db` 、 `flatness` 、 `thermal_c` : 平均( `_mean` )とばらつき( `_std` 、標準偏差)
   - `onset_count` : 合計( `_sum` )
   - `wifi_rssi_hist` 、 `ble_rssi_hist` 、 `co2_ppm` : 平均( `_mean` )
 
 ## 予測の確かめ
 
-- 刻みtの入力と、刻みtと刻みt+1で鳴らした値から、刻みt+1の入力を予測する。予測してずれを測ってから学ぶ
+- 刻みtの入力と、刻みtと刻みt+1で鳴らした値から、刻みt+1の入力を予測し、ずれを測ってから学ぶ
   - 刻みtで鳴らした値も見せるのは、移る時間が長いと、刻みt+1の音が刻みtの値からどこまで移ったかで決まるため
 - 入力が揃わない刻み(CoreS3が抜けていたときなど)は使わない
 - 比べる3つ
   - `unchanged` : 次の刻みも今と同じと予測する
   - `without_sound` : 鳴らした値を見せずに学ぶネット
   - `with_sound` : 鳴らした値も見せて学ぶネット
-- ずれは、値ごとに記録全体のばらつきを1とした単位の二乗の平均。入力の種類(`mic` 、 `thermal` 、 `radio` 、 `co2`)ごとと、種類を同じ重みで平均した全体( `total` )を、100刻みごとに表示する
+- ずれは、値ごとに記録全体のばらつきを1とした単位の二乗の平均で、入力の種類(`mic` 、 `thermal` 、 `radio` 、 `co2`)ごとと、種類を同じ重みで平均した全体( `total` )を、100刻みごとに表示する
